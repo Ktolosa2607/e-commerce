@@ -1,40 +1,100 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-from datetime import datetime
 
-# Configuración inicial
-st.set_page_config(page_title="Control Logístico PRO", layout="wide")
+# Configuración de página
+st.set_page_config(page_title="Control Logístico Avanzado", layout="wide")
 
-# Conexión a TiDB
+# Conexión robusta a TiDB (con SSL para Streamlit Cloud)
 def get_db_connection():
-    return mysql.connector.connect(**st.secrets["tidb"])
+    return mysql.connector.connect(
+        host=st.secrets["tidb"]["host"],
+        port=st.secrets["tidb"]["port"],
+        user=st.secrets["tidb"]["user"],
+        password=st.secrets["tidb"]["password"],
+        database=st.secrets["tidb"]["database"],
+        ssl_ca="/etc/ssl/certs/ca-certificates.crt" 
+    )
 
-# --- LÓGICA DE NAVEGACIÓN ---
-menu = ["📊 Dashboard", "📝 Nuevo Registro", "📁 Historial y PDF"]
-choice = st.sidebar.selectbox("Menú", menu)
+# --- MENÚ ---
+menu = ["📊 Dashboard Analítico", "📝 Nuevo Registro", "📁 Historial y PDF"]
+choice = st.sidebar.selectbox("Navegación", menu)
 
-if choice == "📝 Nuevo Registro":
-    st.header("Entrada de Datos")
+if choice == "📊 Dashboard Analítico":
+    st.title("📊 Análisis Operativo y Financiero")
     
-    with st.form("main_form", clear_on_submit=True):
+    try:
+        conn = get_db_connection()
+        # Traemos todos los datos necesarios para los cálculos
+        query = """SELECT * FROM logistica_v2"""
+        df = pd.read_sql(query, conn)
+        conn.close()
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
+        df = pd.DataFrame()
+
+    if not df.empty:
+        # --- FILA 1: MÉTRICAS DE ADIMEX ---
+        st.subheader("🔍 Control ADIMEX (Por Kilo)")
+        col1, col2, col3 = st.columns(3)
+        
+        total_adimex_calc = df['adimex_calc'].sum()
+        total_adimex_pagado = df['adimex_pagado'].sum()
+        dif_adimex = total_adimex_calc - total_adimex_pagado
+        
+        col1.metric("ADIMEX Calculado ($0.35/kg)", f"${total_adimex_calc:,.2f}")
+        col2.metric("ADIMEX Real Pagado", f"${total_adimex_pagado:,.2f}")
+        col3.metric("Diferencia ADIMEX", f"${dif_adimex:,.2f}", delta=-dif_adimex, delta_color="inverse")
+
+        st.divider()
+
+        # --- FILA 2: MÉTRICAS DE SERVICIOS CC VS GASTOS ---
+        st.subheader("💰 Rentabilidad: Servicios CC vs Gastos Reales")
         c1, c2, c3 = st.columns(3)
         
-        with c1:
-            mes = st.selectbox("Mes", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-            f_fm = st.date_input("Fecha Pre Alerta FM")
-            m_fm = st.text_input("Máster First Mile")
-            cajas = st.number_input("Cajas", min_value=0)
-            paquetes = st.number_input("Paquetes", min_value=0)
-            peso = st.number_input("Peso (KG)", min_value=0.0)
+        total_servicios_cc = df['cc_services_calc'].sum()
+        total_gastos_operativos = df[['costo_cuadrilla', 'montacargas', 'yales', 'servicio_extraordinario', 'flete_subcontrato']].sum().sum()
+        margen_neto = total_servicios_cc - total_gastos_operativos
+        
+        c1.metric("Total Servicios CC ($0.84/paq)", f"${total_servicios_cc:,.2f}")
+        c2.metric("Total Gastos Operativos", f"${total_gastos_operativos:,.2f}")
+        c3.metric("Utilidad / Diferencia", f"${margen_neto:,.2f}", delta=margen_neto)
 
-        with c2:
-            f_lm = st.date_input("Fecha Pre Alerta LM")
-            m_lm = st.text_input("Máster Last Mile")
-            p_cuadrilla = st.number_input("Personas Cuadrilla", min_value=0)
-            c_cuadrilla = st.number_input("Costo Cuadrilla $", min_value=0.0)
-            montacargas = st.number_input("Montacargas $", min_value=0.0)
-            yales = st.number_input("Yales $", min_value=0.0)
+        st.divider()
+
+        # --- FILA 3: GRÁFICOS DETALLADOS ---
+        g1, g2 = st.columns(2)
+        
+        with g1:
+            st.subheader("📋 Detalle de Gastos")
+            # Sumamos cada columna de gasto para el gráfico
+            gastos_detallados = {
+                'Cuadrilla': df['costo_cuadrilla'].sum(),
+                'Montacargas': df['montacargas'].sum(),
+                'Yales': df['yales'].sum(),
+                'Serv. Extra': df['servicio_extraordinario'].sum(),
+                'Fletes': df['flete_subcontrato'].sum()
+            }
+            df_gastos = pd.DataFrame(list(gastos_detallados.items()), columns=['Concepto', 'Total'])
+            st.bar_chart(df_gastos.set_index('Concepto'))
+
+        with g2:
+            st.subheader("📦 Volumen de Másters por Mes")
+            # Contamos cuántos registros (másters) hay por mes
+            masters_mes = df.groupby('mes')['master_fm'].count()
+            st.line_chart(masters_mes)
+
+    else:
+        st.info("Aún no hay datos registrados para mostrar el análisis.")
+
+elif choice == "📝 Nuevo Registro":
+    st.header("📝 Ingresar Datos de Operación")
+    # ... (Aquí va el mismo código de formulario que te pasé anteriormente)
+    # Asegúrate de que el botón de guardado use la tabla 'logistica_v2'
+
+elif choice == "📁 Historial y PDF":
+    st.header("📁 Consulta de Registros y Comprobantes")
+    # ... (Aquí va el mismo código de historial con el botón de descarga de PDF)            yales = st.number_input("Yales $", min_value=0.0)
 
         with c3:
             s_extra = st.number_input("Servicio Extraordinario $", min_value=0.0)
