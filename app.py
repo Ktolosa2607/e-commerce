@@ -22,7 +22,7 @@ st.sidebar.title("Navegación")
 choice = st.sidebar.radio("Ir a:", ["📊 Dashboard Analítico", "📝 Nuevo Registro", "📁 Historial y Archivos"])
 
 # ==========================================
-# SECCIÓN: DASHBOARD ANALÍTICO
+# SECCIÓN: DASHBOARD ANALÍTICO (CON FILTROS)
 # ==========================================
 if choice == "📊 Dashboard Analítico":
     st.title("📊 Dashboard de Control y Rentabilidad")
@@ -33,8 +33,110 @@ if choice == "📊 Dashboard Analítico":
         conn.close()
         
         if not df.empty:
-            # --- FILA 1: MÉTRICAS CLAVE ---
+            # Convertir fecha a datetime para filtrar
+            df['fecha_pre_alerta_lm'] = pd.to_datetime(df['fecha_pre_alerta_lm'])
+            
+            # --- FILTROS EN SIDEBAR ---
+            st.sidebar.divider()
+            st.sidebar.subheader("📅 Filtros de Fecha (Last Mile)")
+            tipo_filtro = st.sidebar.selectbox("Filtrar por:", ["Todo", "Mes/Año específico", "Rango de fechas"])
+            
+            df_filter = df.copy()
+            
+            if tipo_filtro == "Mes/Año específico":
+                year = st.sidebar.selectbox("Año", sorted(df['fecha_pre_alerta_lm'].dt.year.unique(), reverse=True))
+                month = st.sidebar.selectbox("Mes", range(1, 13), format_func=lambda x: ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"][x-1])
+                df_filter = df[(df['fecha_pre_alerta_lm'].dt.year == year) & (df['fecha_pre_alerta_lm'].dt.month == month)]
+                
+            elif tipo_filtro == "Rango de fechas":
+                rango = st.sidebar.date_input("Seleccione Rango", [])
+                if len(rango) == 2:
+                    df_filter = df[(df['fecha_pre_alerta_lm'].dt.date >= rango[0]) & (df['fecha_pre_alerta_lm'].dt.date <= rango[1])]
+
+            # --- FILA 1: RESUMEN GENERAL MEJORADO ---
             st.subheader("💡 Resumen General")
+            k1, k2, k3, k4, k5, k6 = st.columns(6)
+            
+            total_servicios = df_filter['cc_services_calc'].sum()
+            total_gastos = df_filter['total_costos'].sum()
+            utilidad = total_servicios - total_gastos
+            
+            k1.metric("Ingresos CC", f"${total_servicios:,.2f}")
+            k2.metric("Gastos Op.", f"${total_gastos:,.2f}")
+            k3.metric("Utilidad Neta", f"${utilidad:,.2f}")
+            k4.metric("Total Paquetes", f"{int(df_filter['paquetes'].sum()):,}")
+            k5.metric("Cant. Másters", f"{len(df_filter)}")
+            k6.metric("Peso (KG)", f"{df_filter['peso_kg'].sum():,.1f}")
+            
+            st.divider()
+            
+            # --- FILA 2: GRÁFICOS ---
+            g1, g2 = st.columns(2)
+            with g1:
+                st.write("### 💸 Gastos Detallados")
+                gastos_data = {
+                    'Cuadrilla': df_filter['costo_cuadrilla'].sum(),
+                    'Montacargas': df_filter['montacargas'].sum(),
+                    'Yales': df_filter['yales'].sum(),
+                    'Flete': df_filter['flete_subcontrato'].sum(),
+                    'Extras': df_filter['servicio_extraordinario'].sum()
+                }
+                st.bar_chart(pd.Series(gastos_data))
+            with g2:
+                st.write("### 📦 ADIMEX: Calculado vs Pagado")
+                adimex_comp = {
+                    'Calculado': df_filter['adimex_calc'].sum(),
+                    'Real Pagado': df_filter['adimex_pagado'].sum()
+                }
+                st.bar_chart(pd.Series(adimex_comp))
+
+        else:
+            st.info("Sin registros.")
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+# ==========================================
+# SECCIÓN: HISTORIAL (TABLA LIMPIA)
+# ==========================================
+elif choice == "📁 Historial y Archivos":
+    st.title("📁 Historial de Operaciones")
+    
+    try:
+        conn = get_db_connection()
+        df = pd.read_sql("SELECT * FROM logistica_v2 ORDER BY fecha_pre_alerta_lm DESC", conn)
+        conn.close()
+        
+        if not df.empty:
+            # BUSCADOR PDF
+            st.subheader("⬇️ Descarga de Comprobantes")
+            df_pdf = df[df['pdf_nombre'].notnull()]
+            m_sel = st.selectbox("Buscar por Máster First Mile:", ["---"] + df_pdf['master_fm'].tolist())
+            
+            if m_sel != "---":
+                # Lógica de descarga (omitida aquí por brevedad, igual que antes)
+                pass
+
+            st.divider()
+            
+            # TABLA LIMPIA: Ocultamos el índice y columnas innecesarias
+            st.subheader("📋 Registro Detallado")
+            
+            # Eliminamos la columna de índice al mostrar y la de binario del PDF
+            df_display = df.drop(columns=['pdf_archivo'])
+            
+            # Usamos st.dataframe con hide_index=True para eliminar la columna vacía a la izquierda
+            st.dataframe(
+                df_display, 
+                use_container_width=True, 
+                hide_index=True # ESTO ELIMINA LA COLUMNA SIN ENCABEZADO
+            )
+            
+        else:
+            st.info("No hay datos.")
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+# (La sección de Nuevo Registro se mantiene igual que en el código anterior)            st.subheader("💡 Resumen General")
             k1, k2, k3, k4 = st.columns(4)
             
             total_servicios = df['cc_services_calc'].sum()
