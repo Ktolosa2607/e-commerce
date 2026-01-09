@@ -50,6 +50,23 @@ if choice == "📊 Dashboard Analítico":
                 if len(rango) == 2:
                     df_f = df[(df['fecha_pre_alerta_lm'].dt.date >= rango[0]) & (df['fecha_pre_alerta_lm'].dt.date <= rango[1])]
 
+            # --- CÁLCULOS DE DESGLOSE PARA EL HOVER ---
+            sum_cuadrilla = df_f['costo_cuadrilla'].sum()
+            sum_montacargas = df_f['montacargas'].sum()
+            sum_yales = df_f['yales'].sum()
+            sum_flete = df_f['flete_subcontrato'].sum()
+            sum_extras = df_f['servicio_extraordinario'].sum()
+            
+            # Construcción del texto de ayuda (Tooltip)
+            detalle_gastos_str = (
+                f"**Desglose de Gastos:**\n\n"
+                f"- 👥 Cuadrilla: ${sum_cuadrilla:,.2f}\n"
+                f"- 🚜 Montacargas: ${sum_montacargas:,.2f}\n"
+                f"- 🛲 Yales: ${sum_yales:,.2f}\n"
+                f"- 🚛 Fletes Sub.: ${sum_flete:,.2f}\n"
+                f"- ⚠️ Extras: ${sum_extras:,.2f}"
+            )
+
             # --- RESUMEN GENERAL ---
             st.subheader("💡 Resumen de Operación")
             m1, m2, m3, m4, m5, m6 = st.columns(6)
@@ -58,8 +75,9 @@ if choice == "📊 Dashboard Analítico":
             total_gastos_op = df_f['total_costos'].sum()
             utilidad_neta = total_servicios_cc - total_gastos_op
             
-            m1.metric("Ingresos CC", f"${total_servicios_cc:,.2f}")
-            m2.metric("Gastos Op.", f"${total_gastos_op:,.2f}")
+            m1.metric("Ingresos CC", f"${total_servicios_cc:,.2f}", help="Calculado como: Paquetes × $0.84")
+            # AQUÍ ESTÁ LA MEJORA: Se añade el parámetro 'help'
+            m2.metric("Gastos Op.", f"${total_gastos_op:,.2f}", help=detalle_gastos_str)
             m3.metric("Utilidad Neta", f"${utilidad_neta:,.2f}")
             m4.metric("Paquetes", f"{int(df_f['paquetes'].sum()):,} Pq")
             m5.metric("Másters", f"{len(df_f)}")
@@ -74,7 +92,7 @@ if choice == "📊 Dashboard Analítico":
             total_adimex_pagado = df_f['adimex_pagado'].sum()
             total_dif_adimex = df_f['dif_adimex'].sum()
             
-            a1.metric("ADIMEX Calculado", f"${total_adimex_calc:,.2f}")
+            a1.metric("ADIMEX Calculado", f"${total_adimex_calc:,.2f}", help="Basado en: Peso KG × $0.35")
             a2.metric("ADIMEX Real Pagado", f"${total_adimex_pagado:,.2f}")
             a3.metric("Diferencia", f"${total_dif_adimex:,.2f}", delta=-total_dif_adimex, delta_color="inverse")
             
@@ -84,8 +102,8 @@ if choice == "📊 Dashboard Analítico":
             col_g1, col_g2 = st.columns(2)
             with col_g1:
                 st.write("### 💸 Distribución de Gastos")
-                gastos = {'Cuadrilla': df_f['costo_cuadrilla'].sum(), 'Montacargas': df_f['montacargas'].sum(), 'Yales': df_f['yales'].sum(), 'Flete': df_f['flete_subcontrato'].sum(), 'Extras': df_f['servicio_extraordinario'].sum()}
-                st.bar_chart(pd.Series(gastos))
+                gastos_dict = {'Cuadrilla': sum_cuadrilla, 'Montacargas': sum_montacargas, 'Yales': sum_yales, 'Flete': sum_flete, 'Extras': sum_extras}
+                st.bar_chart(pd.Series(gastos_dict))
             with col_g2:
                 st.write("### 📊 Comparativa ADIMEX")
                 st.bar_chart(pd.Series({'Calculado': total_adimex_calc, 'Pagado': total_adimex_pagado}))
@@ -95,7 +113,7 @@ if choice == "📊 Dashboard Analítico":
         st.error(f"Error: {e}")
 
 # ==========================================
-# SECCIÓN: HISTORIAL Y ARCHIVOS (CON FORMATO)
+# SECCIÓN: HISTORIAL Y ARCHIVOS
 # ==========================================
 elif choice == "📁 Historial y Archivos":
     st.title("📁 Historial de Operaciones")
@@ -120,7 +138,6 @@ elif choice == "📁 Historial y Archivos":
             st.divider()
             st.subheader("📋 Registro de Datos")
             
-            # Formateo de columnas en la tabla
             st.dataframe(
                 df.drop(columns=['pdf_archivo']), 
                 use_container_width=True, 
